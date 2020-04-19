@@ -153,6 +153,13 @@ rules:
 - apiGroups:
   - ''
   resources:
+  - services
+  verbs:
+  - update
+  - patch
+- apiGroups:
+  - ''
+  resources:
   - events
   verbs:
   - create

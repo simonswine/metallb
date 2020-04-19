@@ -16,12 +16,14 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	golog "log"
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,11 +34,14 @@ import (
 	"go.universe.tf/metallb/internal/logging"
 	"go.universe.tf/metallb/internal/version"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	gokitlog "github.com/go-kit/kit/log"
 	"github.com/hashicorp/memberlist"
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+const annotationLayer2OwnerNode = "layer2.metallb.universe.tf/owner-node"
 
 var announcing = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 	Namespace: "metallb",
@@ -56,6 +61,7 @@ type service interface {
 	UpdateStatus(svc *v1.Service) error
 	Infof(svc *v1.Service, desc, msg string, args ...interface{})
 	Errorf(svc *v1.Service, desc, msg string, args ...interface{})
+	Patch(*v1.Service, types.PatchType, []byte, ...string) (*v1.Service, error)
 }
 
 func main() {
@@ -332,6 +338,26 @@ func (c *controller) SetBalancer(l gokitlog.Logger, name string, svc *v1.Service
 	if c.announced[name] == "" {
 		c.announced[name] = pool.Protocol
 		c.svcIP[name] = lbIP
+	}
+
+	// expose elected leader of layer2 protocol
+	if pool.Protocol == config.Layer2 {
+		payloadBytes, _ := json.Marshal([]struct {
+			Op    string      `json:"op"`
+			Path  string      `json:"path"`
+			Value interface{} `json:"value"`
+		}{{
+			Op: "replace",
+			Path: fmt.Sprintf(
+				"/metadata/annotations/%s",
+				strings.ReplaceAll(annotationLayer2OwnerNode, "/", "~1"),
+			),
+			Value: c.myNode,
+		}})
+
+		if _, err := c.client.Patch(svc, types.JSONPatchType, payloadBytes); err != nil {
+			l.Log("op", "setBalancer", "error", err, "msg", "failed to patch owner annotation on service")
+		}
 	}
 
 	announcing.With(prometheus.Labels{

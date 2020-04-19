@@ -13,6 +13,7 @@ import (
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -316,6 +317,11 @@ func (c *Client) ForceSync() {
 // are not propagated, for that you need to call UpdateStatus.
 func (c *Client) Update(svc *v1.Service) (*v1.Service, error) {
 	return c.client.CoreV1().Services(svc.Namespace).Update(svc)
+}
+
+// Patch changes a svc in the kubernetes cluster
+func (c *Client) Patch(svc *v1.Service, pt types.PatchType, data []byte, subresources ...string) (result *v1.Service, err error) {
+	return c.client.CoreV1().Services(svc.Namespace).Patch(svc.Name, pt, data, subresources...)
 }
 
 // UpdateStatus writes the protected "status" field of svc back into
