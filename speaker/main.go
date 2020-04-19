@@ -38,6 +38,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+const annotationLayer2OwnerNode = "layer2.metallb.universe.tf/owner-node"
+
 var announcing = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 	Namespace: "metallb",
 	Subsystem: "speaker",
@@ -332,6 +334,19 @@ func (c *controller) SetBalancer(l gokitlog.Logger, name string, svc *v1.Service
 	if c.announced[name] == "" {
 		c.announced[name] = pool.Protocol
 		c.svcIP[name] = lbIP
+	}
+
+	// expose elected leader of layer2 protocol
+	if pool.Protocol == config.Layer2 {
+		svcUpdated := svc.DeepCopy()
+		if svcUpdated.Annotations == nil {
+			svcUpdated.Annotations = make(map[string]string)
+		}
+
+		svcUpdated.Annotations[annotationLayer2OwnerNode] = c.myNode
+		if _, err := c.client.Update(svcUpdated); err != nil {
+			l.Log("op", "setBalancer", "error", err, "msg", "failed to update owner annotation on service")
+		}
 	}
 
 	announcing.With(prometheus.Labels{
